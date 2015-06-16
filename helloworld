@@ -1,1 +1,113 @@
-"hello world"
+
+ALTER TRIGGER tg_Oportunidades_insteadOfUpdate on Oportunidades
+with encryption
+INSTEAD OF UPDATE
+AS
+
+SET XACT_ABORT, NOCOUNT ON
+begin try
+	
+	declare @localTran tinyint, 
+			@retVal int,
+			@error int,
+			@rowCnt int
+
+	set @localTran = 1
+	if @@TRANCOUNT = 0 AND @localTran = 1
+	begin
+		begin transaction
+	end	
+
+	declare @oportunidad_id int, @id_superior int
+	select @oportunidad_id = i.oportunidad_id, @id_superior = isnull(i.oportunidad_superior,0)
+	from inserted i
+	declare @id_superior_ant int
+	select @id_superior_ant = isnull(d.oportunidad_superior,0)
+	from deleted d
+	
+	if(@id_superior <> @id_superior_ant)
+	begin
+		exec @retVal = dbo.ctlWBS @oportunidad_id, @id_superior
+		select @error = @@error, @rowCnt = @@ROWCOUNT
+		if(@retVal = -1 OR @error > 0)
+		begin
+			if @error > 0
+				raiserror('Fallo en ctlWBS',16,1)
+				goto errExit
+		end
+	else
+			begin
+				update oportunidades set
+				codigo_oportunidad = i.codigo_oportunidad,
+				oportunidad_superior = i.oportunidad_superior,
+				oportunidad = i.oportunidad,
+				estado = i.estado,
+				descripcion = i.descripcion,
+				gerencia_solicitante = i.gerencia_solicitante,
+				aplica_proceso = i.aplica_proceso,
+				alcance = i.alcance,
+				gerencia_responsable = i.gerencia_responsable,
+				coordinador_responsable = i.coordinador_responsable,
+				lider_responsable = i.lider_responsable,
+				categoria = i.categoria,
+				inicio_min = i.inicio_min,
+				inicio_max = i.inicio_max,
+				fin_min = i.fin_min,
+				fin_max = i.fin_max,
+				inicio = i.inicio,
+				fin = i.fin,
+				startAtStart = i.startAtStart,
+				endAtEnd = i.endAtEnd,
+				startAtEnd = i.startAtStart,
+				endBeforeStart = i.endBeforeStart,
+				endAtStart = i.endAtStart,
+				endBeforeEnd = i.endBeforeEnd,
+				startBeforeEnd = i.startBeforeEnd,
+				startAfterStart = i.startAfterStart,
+				sincIntervalo = i.sincIntervalo,
+				estado_proceso = i.estado_proceso,
+				etapa = i.etapa,
+				fa_disp_prueba_usuario = i.fa_disp_prueba_usuario,
+				fa_ultimo_comite = i.fa_ultimo_comite,
+				fa_proximo_comite = i.fa_proximo_comite,
+				responsable_pmo = i.responsable_pmo,
+				origen_info_plan = i.origen_info_plan,
+				plan_path = i.plan_path,
+				modificado = getdate(),
+				modificado_por = system_user,
+				num_version = isnull(d.num_version,0) + 1,
+				_wbs = i._wbs
+
+				from oportunidades o
+					inner join inserted i on o.oportunidad_id = i.oportunidad_id
+					inner join deleted d on i.oportunidad_id = d.oportunidad_id
+			end
+	end
+		
+	
+
+	--Normal exit
+	if @localTran = 1 AND @@TRANCOUNT > 0
+		begin
+			commit
+		end
+	
+	--Error exit
+	errExit:
+	if @localTran = 1 AND @@TRANCOUNT > 0
+		begin
+			rollback
+			raiserror('errExit texto',16,1)
+		end
+		
+
+END try
+
+begin catch
+	IF @@trancount > 0 ROLLBACK TRANSACTION
+	declare @error_message nvarchar(max), @error_severity int, @error_state int
+	select @error_message = ERROR_MESSAGE(), @error_severity = ERROR_SEVERITY(), @error_state = error_state()
+	raiserror(@error_message, @error_severity, @error_state)
+
+end catch
+GO
